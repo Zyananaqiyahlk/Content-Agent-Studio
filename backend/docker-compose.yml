@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: zyana-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: zyana_db
+      POSTGRES_USER: zyana_user
+      POSTGRES_PASSWORD: zyana_password_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U zyana_user -d zyana_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:

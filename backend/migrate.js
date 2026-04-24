@@ -1,5 +1,5 @@
 import { createRequire } from 'module'
-import { connectDatabase, query } from '../src/config/database.js'
+import { connectDatabase, query } from './config/database.js'
 import dotenv from 'dotenv'
 dotenv.config()
 

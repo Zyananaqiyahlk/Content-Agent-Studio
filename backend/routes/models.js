@@ -1,25 +1,30 @@
 import express from 'express'
-
 const router = express.Router()
 
-// GET /api/models — returns all available AI models grouped by provider
-router.get('/', (req, res) => {
-  const models = [
-    // Anthropic
-    { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet 4',  provider: 'anthropic', label: 'Anthropic', available: !!process.env.CLAUDE_API_KEY },
-    { id: 'claude-opus-4-5',          name: 'Claude Opus 4',    provider: 'anthropic', label: 'Anthropic', available: !!process.env.CLAUDE_API_KEY },
-    // OpenAI
-    { id: 'gpt-4o',                   name: 'GPT-4o',           provider: 'openai',    label: 'OpenAI',    available: !!process.env.OPENAI_API_KEY },
-    { id: 'gpt-4o-mini',              name: 'GPT-4o Mini',      provider: 'openai',    label: 'OpenAI',    available: !!process.env.OPENAI_API_KEY },
-    // Google
-    { id: 'gemini-1.5-pro',           name: 'Gemini 1.5 Pro',   provider: 'google',    label: 'Google',    available: !!process.env.GOOGLE_API_KEY },
-    { id: 'gemini-1.5-flash',         name: 'Gemini 1.5 Flash', provider: 'google',    label: 'Google',    available: !!process.env.GOOGLE_API_KEY },
-    // Together AI
-    { id: 'meta-llama/Llama-3-70b-chat-hf', name: 'Llama 3 70B', provider: 'together', label: 'Together AI', available: !!process.env.TOGETHER_API_KEY },
-  ]
+const MODELS = [
+  { id: 'claude-sonnet-4-20250514',       name: 'Claude Sonnet 4',  provider: 'anthropic', speed: 'fast'    },
+  { id: 'claude-haiku-4-5-20251001',      name: 'Claude Haiku',     provider: 'anthropic', speed: 'fastest' },
+  { id: 'gpt-4o',                         name: 'GPT-4o',           provider: 'openai',    speed: 'fast'    },
+  { id: 'gpt-4o-mini',                    name: 'GPT-4o Mini',      provider: 'openai',    speed: 'fastest' },
+  { id: 'gemini-1.5-pro',                 name: 'Gemini 1.5 Pro',   provider: 'google',    speed: 'fast'    },
+  { id: 'gemini-1.5-flash',               name: 'Gemini Flash',     provider: 'google',    speed: 'fastest' },
+  { id: 'meta-llama/Llama-3-70b-chat-hf', name: 'Llama 3 70B',     provider: 'together',  speed: 'fast'    },
+]
 
-  // Always return all models; frontend can show unavailable ones dimmed
-  res.json(models)
+router.get('/', (req, res) => {
+  res.json(MODELS.map(m => ({
+    ...m,
+    available: m.provider === 'anthropic' ? !!process.env.CLAUDE_API_KEY
+             : m.provider === 'openai'    ? !!process.env.OPENAI_API_KEY
+             : m.provider === 'google'    ? !!process.env.GOOGLE_API_KEY
+             : !!process.env.TOGETHER_API_KEY
+  })))
+})
+
+router.get('/provider/:provider', (req, res) => {
+  const filtered = MODELS.filter(m => m.provider === req.params.provider)
+  if (!filtered.length) return res.status(404).json({ error: `No models for: ${req.params.provider}` })
+  res.json(filtered)
 })
 
 export default router

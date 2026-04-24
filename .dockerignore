@@ -1,0 +1,8 @@
+backend/node_modules
+frontend/node_modules
+frontend/dist
+.env
+*.log
+.DS_Store
+zyana-content-agent-v1.0/
+zyana-content-agent-v1.0.zip

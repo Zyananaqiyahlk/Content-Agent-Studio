@@ -73,13 +73,15 @@ export default function Scripts() {
           <h1>Script Generator</h1>
           <p>Generate ready-to-film video scripts with AI. Costs 5 credits per script.</p>
         </div>
-        <span className="badge">⚡ {credits} credits</span>
+        <span className="credits-badge">⚡ {credits} credits</span>
       </div>
 
       <div className="tabs">
-        <button className={`tab${tab === 'generate' ? ' active' : ''}`} onClick={() => setTab('generate')}>Generate</button>
+        <button className={`tab${tab === 'generate' ? ' active coral' : ''}`} onClick={() => setTab('generate')}>
+          🎬 Generate
+        </button>
         <button className={`tab${tab === 'library' ? ' active' : ''}`} onClick={() => setTab('library')}>
-          Library ({scripts.length})
+          📚 Library {scripts.length > 0 && `(${scripts.length})`}
         </button>
       </div>
 
@@ -131,8 +133,8 @@ export default function Scripts() {
 
               {error && <div className="alert error">{error}</div>}
 
-              <button className="btn btn-primary" type="submit" disabled={loading}>
-                {loading ? <><span className="spinner" /> Generating...</> : '🎬 Generate Script (5 credits)'}
+              <button className="btn-coral-generate" type="submit" disabled={loading}>
+                {loading ? <><span className="spinner" /> Generating script…</> : '🎬 Generate Script — 5 credits'}
               </button>
             </form>
           </div>

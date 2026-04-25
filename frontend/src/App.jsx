@@ -14,6 +14,7 @@ import Chat     from './pages/Chat.jsx'
 import Outreach from './pages/Outreach.jsx'
 import Credits  from './pages/Credits.jsx'
 import Settings from './pages/Settings.jsx'
+import Studio   from './pages/Studio.jsx'
 
 // Smart notification triggers based on user state
 function SmartNotifications() {
@@ -143,6 +144,9 @@ export default function App() {
             } />
             <Route path="/settings" element={
               <ProtectedRoute><AppShell><Settings /></AppShell></ProtectedRoute>
+            } />
+            <Route path="/studio" element={
+              <ProtectedRoute><AppShell><Studio /></AppShell></ProtectedRoute>
             } />
 
             <Route path="*" element={<Navigate to="/dashboard" replace />} />

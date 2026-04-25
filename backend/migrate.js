@@ -78,8 +78,7 @@ async function migrate() {
         type VARCHAR NOT NULL,
         amount_usd DECIMAL(10,2),
         credits_added INT DEFAULT 0,
-        stripe_payment_intent_id VARCHAR(255),
-        stripe_session_id VARCHAR(255),
+        paypal_order_id VARCHAR(255),
         status VARCHAR DEFAULT 'pending',
         metadata JSONB DEFAULT '{}',
         created_at TIMESTAMP DEFAULT NOW(),
@@ -87,6 +86,12 @@ async function migrate() {
       )
     `)
     console.log('✅ Table: zyana.transactions')
+
+    // Add paypal_order_id to existing tables (safe — ignored if already exists)
+    await query(`ALTER TABLE zyana.transactions ADD COLUMN IF NOT EXISTS paypal_order_id VARCHAR(255)`)
+    await query(`ALTER TABLE zyana.user_credits DROP COLUMN IF EXISTS stripe_customer_id`)
+    await query(`ALTER TABLE zyana.user_credits DROP COLUMN IF EXISTS stripe_subscription_id`)
+    console.log('✅ Columns: paypal_order_id added, stripe columns removed')
 
     // GENERATED SCRIPTS (persisted to DB)
     await query(`
@@ -121,6 +126,45 @@ async function migrate() {
       )
     `)
     console.log('✅ Table: zyana.downloads')
+
+    // USER PLATFORMS — social account handles + cached metrics
+    await query(`
+      CREATE TABLE IF NOT EXISTS zyana.user_platforms (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID REFERENCES zyana.users(id) ON DELETE CASCADE,
+        platform VARCHAR(50) NOT NULL,
+        handle VARCHAR(255) DEFAULT '',
+        metrics JSONB DEFAULT '{}',
+        synced_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW(),
+        UNIQUE(user_id, platform)
+      )
+    `)
+    console.log('✅ Table: zyana.user_platforms')
+
+    // STUDIO VIDEOS — HeyGen generated videos
+    await query(`
+      CREATE TABLE IF NOT EXISTS zyana.studio_videos (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID REFERENCES zyana.users(id) ON DELETE CASCADE,
+        video_id VARCHAR(255),
+        script_preview TEXT,
+        avatar_id VARCHAR(255),
+        status VARCHAR(50) DEFAULT 'processing',
+        video_url TEXT,
+        thumbnail_url TEXT,
+        metadata JSONB DEFAULT '{}',
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      )
+    `)
+    console.log('✅ Table: zyana.studio_videos')
+
+    // Add brand_preferences + bio to users (safe — ignored if already exists)
+    await query(`ALTER TABLE zyana.users ADD COLUMN IF NOT EXISTS brand_preferences JSONB DEFAULT '{}'`)
+    await query(`ALTER TABLE zyana.users ADD COLUMN IF NOT EXISTS bio TEXT DEFAULT ''`)
+    console.log('✅ Columns: brand_preferences + bio added to users')
 
     // AVAILABLE AI MODELS
     await query(`

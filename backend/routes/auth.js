@@ -109,7 +109,17 @@ router.get('/me', authenticate, async (req, res) => {
   const creditsResult = await query('SELECT balance, subscription_tier FROM zyana.user_credits WHERE user_id = $1', [req.user.id])
   const credits = creditsResult.rows[0] || { balance: 0, subscription_tier: 'free' }
   res.json({
-    user: { id: req.user.id, email: req.user.email, name: req.user.name, brandName: req.user.brand_name, niche: req.user.niche, preferredModel: req.user.preferred_ai_model, aiProvider: req.user.ai_provider },
+    user: {
+      id: req.user.id,
+      email: req.user.email,
+      name: req.user.name,
+      brandName: req.user.brand_name,
+      niche: req.user.niche,
+      bio: req.user.bio || '',
+      preferredModel: req.user.preferred_ai_model,
+      aiProvider: req.user.ai_provider,
+      brandPreferences: req.user.brand_preferences || {},
+    },
     credits: credits.balance,
     tier: credits.subscription_tier
   })
@@ -118,13 +128,40 @@ router.get('/me', authenticate, async (req, res) => {
 // PUT /api/auth/profile
 router.put('/profile', authenticate, async (req, res) => {
   try {
-    const { name, brandName, niche, preferredModel, aiProvider } = req.body
+    const { name, brandName, niche, bio, preferredModel, aiProvider, brandPreferences } = req.body
     await query(`
-      UPDATE zyana.users SET name=$1, brand_name=$2, niche=$3, preferred_ai_model=$4, ai_provider=$5, updated_at=NOW()
-      WHERE id=$6
-    `, [name || req.user.name, brandName || req.user.brand_name, niche || req.user.niche, preferredModel || req.user.preferred_ai_model, aiProvider || req.user.ai_provider, req.user.id])
-    res.json({ message: 'Profile updated' })
+      UPDATE zyana.users
+      SET name=$1, brand_name=$2, niche=$3, bio=$4, preferred_ai_model=$5, ai_provider=$6,
+          brand_preferences=$7, updated_at=NOW()
+      WHERE id=$8
+    `, [
+      name || req.user.name,
+      brandName || req.user.brand_name,
+      niche || req.user.niche,
+      bio ?? (req.user.bio || ''),
+      preferredModel || req.user.preferred_ai_model,
+      aiProvider || req.user.ai_provider,
+      JSON.stringify(brandPreferences || req.user.brand_preferences || {}),
+      req.user.id,
+    ])
+
+    // Also include platforms when logging in so /me returns them
+    res.json({
+      message: 'Profile updated',
+      user: {
+        id: req.user.id,
+        email: req.user.email,
+        name: name || req.user.name,
+        brandName: brandName || req.user.brand_name,
+        niche: niche || req.user.niche,
+        bio: bio ?? (req.user.bio || ''),
+        preferredModel: preferredModel || req.user.preferred_ai_model,
+        aiProvider: aiProvider || req.user.ai_provider,
+        brandPreferences: brandPreferences || req.user.brand_preferences || {},
+      }
+    })
   } catch (error) {
+    console.error('Profile update error:', error)
     res.status(500).json({ error: 'Update failed' })
   }
 })

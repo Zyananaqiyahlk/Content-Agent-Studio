@@ -10,23 +10,46 @@ export default function Credits() {
   const [history, setHistory] = useState([])
   const [balance, setBalance] = useState(null)
   const [loading, setLoading] = useState({})
+  const [capturing, setCapturing] = useState(false)
   const [successMsg, setSuccessMsg] = useState('')
   const [error, setError] = useState('')
 
-  // Handle Stripe redirect back
+  // Handle PayPal redirect back — capture the payment
   useEffect(() => {
     const params = new URLSearchParams(location.search)
-    if (params.get('payment') === 'success') {
-      const added = params.get('credits')
-      setSuccessMsg(`Payment successful! ${added ? `+${added} credits` : 'Credits'} added to your account.`)
-      refreshCredits()
-      window.history.replaceState({}, '', '/credits')
+    const payment = params.get('payment')
+    const token = params.get('token')   // PayPal order ID
+
+    if (payment === 'pending' && token) {
+      setCapturing(true)
+      api.capturePaypal(token)
+        .then(res => {
+          setSuccessMsg(`Payment confirmed! +${res.credits} credits added to your account.`)
+          refreshCredits()
+          reloadData()
+        })
+        .catch(err => setError(err.message || 'Payment capture failed. Contact support.'))
+        .finally(() => {
+          setCapturing(false)
+          window.history.replaceState({}, '', '/credits')
+        })
     }
-    if (params.get('payment') === 'cancelled') {
+
+    if (payment === 'cancelled') {
       setError('Payment was cancelled.')
       window.history.replaceState({}, '', '/credits')
     }
-  }, [location.search, refreshCredits])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  function reloadData() {
+    Promise.all([
+      api.getBalance(),
+      api.getBillingHistory(),
+    ]).then(([bal, hist]) => {
+      setBalance(bal)
+      setHistory(hist)
+    }).catch(() => {})
+  }
 
   useEffect(() => {
     Promise.all([
@@ -44,12 +67,8 @@ export default function Credits() {
     setLoading(l => ({ ...l, [pkg.id]: true }))
     setError('')
     try {
-      const res = await api.createCheckout({
-        packageId: pkg.id,
-        successUrl: `${window.location.origin}/credits?payment=success&credits=${pkg.credits}`,
-        cancelUrl: `${window.location.origin}/credits?payment=cancelled`,
-      })
-      // Redirect to Stripe checkout
+      const res = await api.createCheckout({ packageId: pkg.id })
+      // Redirect to PayPal checkout
       if (res.url) window.location.href = res.url
     } catch (err) {
       setError(err.message || 'Checkout failed. Please try again.')
@@ -67,10 +86,15 @@ export default function Credits() {
         </div>
       </div>
 
+      {capturing && (
+        <div className="alert info">
+          <span className="spinner" /> Confirming your payment with PayPal…
+        </div>
+      )}
       {successMsg && <div className="alert success">{successMsg}</div>}
       {error && <div className="alert error">{error}</div>}
 
-      {/* Balance card */}
+      {/* Balance cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16, marginBottom: 8 }}>
         <div className="stat-card">
           <div className="label">Credit balance</div>
@@ -94,7 +118,7 @@ export default function Credits() {
         </div>
       </div>
 
-      {/* Credit costs reference */}
+      {/* Credit cost reference */}
       <div className="card card-sm" style={{ marginBottom: 8 }}>
         <div style={{ fontSize: 13, color: 'var(--text-dim)', display: 'flex', gap: 24, flexWrap: 'wrap' }}>
           <span>🎬 Script: <strong>5 credits</strong></span>
@@ -108,6 +132,7 @@ export default function Credits() {
       <div className="card">
         <div className="card-header">
           <h2>Buy credits</h2>
+          <div style={{ fontSize: 12, color: 'var(--text-dim)' }}>Secure checkout via PayPal</div>
         </div>
         {packages.length === 0 ? (
           <div className="empty-state"><div className="icon">💳</div><p>Loading packages…</p></div>
@@ -126,9 +151,9 @@ export default function Credits() {
                 <button
                   className="btn btn-primary"
                   onClick={() => buy(pkg)}
-                  disabled={loading[pkg.id]}
+                  disabled={loading[pkg.id] || capturing}
                 >
-                  {loading[pkg.id] ? <span className="spinner" /> : `Buy ${pkg.name}`}
+                  {loading[pkg.id] ? <span className="spinner" /> : `Buy with PayPal`}
                 </button>
               </div>
             ))}
@@ -136,7 +161,7 @@ export default function Credits() {
         )}
       </div>
 
-      {/* History */}
+      {/* Transaction history */}
       <div className="card">
         <div className="card-header"><h3>Transaction history</h3></div>
         {history.length === 0 ? (

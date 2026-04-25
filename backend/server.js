@@ -8,6 +8,8 @@ import authRoutes from './routes/auth.js'
 import agentRoutes from './routes/agent.js'
 import billingRoutes from './routes/billing.js'
 import modelsRoutes from './routes/models.js'
+import platformsRoutes from './routes/platforms.js'
+import studioRoutes from './routes/studio.js'
 
 dotenv.config()
 
@@ -77,6 +79,8 @@ app.use('/api/auth', authLimiter, authRoutes)
 app.use('/api/agent', apiLimiter, aiLimiter, agentRoutes)
 app.use('/api/billing', billingRoutes)
 app.use('/api/models', modelsRoutes)
+app.use('/api/platforms', platformsRoutes)
+app.use('/api/studio', studioRoutes)
 
 // ─── HEALTH CHECK (Railway uses this) ──────────────────────
 app.get('/health', async (req, res) => {
@@ -113,8 +117,10 @@ app.listen(PORT, () => {
   console.log(`\n🚀 Zyana SaaS Backend running on port ${PORT}`)
   console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`)
   console.log(`🔗 Frontend URL: ${process.env.FRONTEND_URL || 'http://localhost:5173'}`)
-  console.log(`💳 Stripe: ${process.env.STRIPE_SECRET_KEY ? '✅ configured' : '⚠️  not configured'}`)
+  console.log(`💳 PayPal: ${process.env.PAYPAL_CLIENT_ID ? `✅ configured (${process.env.PAYPAL_MODE || 'sandbox'})` : '⚠️  not configured'}`)
   console.log(`🤖 Claude: ${process.env.CLAUDE_API_KEY ? '✅ configured' : '⚠️  not configured'}`)
+  console.log(`📹 HeyGen: ${process.env.HEYGEN_API_KEY ? '✅ configured' : '⚠️  not configured'}`)
+  console.log(`📊 YouTube: ${process.env.YOUTUBE_API_KEY ? '✅ configured' : '⚠️  not configured'}`)
   console.log(`\n📍 Health check: http://localhost:${PORT}/health\n`)
 })
 

@@ -3,6 +3,8 @@ import { useAuth } from '../context/AuthContext.jsx'
 
 const NAV = [
   { to: '/dashboard', icon: '🏠', label: 'Dashboard'  },
+  { to: '/insights',  icon: '📸', label: 'IG Insights', badge: 'LIVE' },
+  { to: '/schedule',  icon: '📅', label: 'Schedule'   },
   { to: '/scripts',   icon: '🎬', label: 'Scripts'    },
   { to: '/studio',    icon: '🎥', label: 'Studio'     },
   { to: '/chat',      icon: '🤖', label: 'AI Chat'    },
@@ -36,7 +38,7 @@ export default function Sidebar() {
         </div>
       </div>
 
-      {NAV.map(({ to, icon, label }) => (
+      {NAV.map(({ to, icon, label, badge }) => (
         <NavLink
           key={to}
           to={to}
@@ -44,6 +46,20 @@ export default function Sidebar() {
         >
           <span className="nav-icon">{icon}</span>
           {label}
+          {badge && (
+            <span style={{
+              marginLeft: 'auto',
+              fontSize: 9,
+              fontWeight: 800,
+              background: '#E1306C',
+              color: '#fff',
+              padding: '1px 5px',
+              borderRadius: 4,
+              letterSpacing: '0.05em',
+            }}>
+              {badge}
+            </span>
+          )}
         </NavLink>
       ))}
 

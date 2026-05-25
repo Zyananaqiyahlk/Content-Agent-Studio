@@ -166,6 +166,43 @@ async function migrate() {
     await query(`ALTER TABLE zyana.users ADD COLUMN IF NOT EXISTS bio TEXT DEFAULT ''`)
     console.log('✅ Columns: brand_preferences + bio added to users')
 
+    // META CONNECTIONS — stores Instagram OAuth tokens + profile cache
+    await query(`
+      CREATE TABLE IF NOT EXISTS zyana.meta_connections (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID REFERENCES zyana.users(id) ON DELETE CASCADE UNIQUE,
+        ig_user_id VARCHAR(255) NOT NULL,
+        page_name VARCHAR(255),
+        access_token TEXT NOT NULL,
+        token_expires_at TIMESTAMP,
+        profile JSONB DEFAULT '{}',
+        connected_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      )
+    `)
+    console.log('✅ Table: zyana.meta_connections')
+
+    // SCHEDULED POSTS — content calendar with monetization schedule
+    await query(`
+      CREATE TABLE IF NOT EXISTS zyana.scheduled_posts (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID REFERENCES zyana.users(id) ON DELETE CASCADE,
+        platform VARCHAR(50) NOT NULL,
+        content_type VARCHAR(50) DEFAULT 'post',
+        caption TEXT DEFAULT '',
+        hashtags TEXT[] DEFAULT '{}',
+        scheduled_at TIMESTAMP NOT NULL,
+        status VARCHAR(50) DEFAULT 'planned',
+        notes TEXT DEFAULT '',
+        script_id UUID REFERENCES zyana.scripts(id) ON DELETE SET NULL,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      )
+    `)
+    console.log('✅ Table: zyana.scheduled_posts')
+    await query(`CREATE INDEX IF NOT EXISTS idx_schedule_user ON zyana.scheduled_posts(user_id)`)
+    await query(`CREATE INDEX IF NOT EXISTS idx_schedule_date ON zyana.scheduled_posts(scheduled_at)`)
+
     // AVAILABLE AI MODELS
     await query(`
       CREATE TABLE IF NOT EXISTS zyana.available_models (

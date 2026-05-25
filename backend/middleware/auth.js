@@ -36,5 +36,9 @@ export async function authenticate(req, res, next) {
 }
 
 export function generateToken(userId) {
-  return jwt.sign({ userId }, process.env.JWT_SECRET, { expiresIn: '30d' })
+  const secret = process.env.JWT_SECRET
+  if (!secret || secret.length < 64) {
+    throw new Error('JWT_SECRET must be at least 64 characters')
+  }
+  return jwt.sign({ userId }, secret, { expiresIn: '30d' })
 }

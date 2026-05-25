@@ -1,5 +1,6 @@
 import { callClaude, callOpenAI, callGemini, callLlama } from './providers/index.js'
 import { query } from '../config/database.js'
+import { log } from '../utils/log.js'
 
 function getSystemKey(provider) {
   const keys = {
@@ -48,7 +49,7 @@ export async function callAI({ userId, provider, model, prompt, userProfile, fea
     }
 
     const duration = Date.now() - start
-    console.log(`✅ AI call: ${provider}/${model} | ${response.tokensUsed} tokens | ${duration}ms | $${response.costToYou.toFixed(6)}`)
+    log(`✅ AI call: ${provider}/${model} | ${response.tokensUsed} tokens | ${duration}ms | $${response.costToYou.toFixed(6)}`)
 
     // Log usage to DB
     await query(`

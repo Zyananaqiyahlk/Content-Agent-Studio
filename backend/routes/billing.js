@@ -1,6 +1,8 @@
 import express from 'express'
 import { authenticate } from '../middleware/auth.js'
-import { query } from '../config/database.js'
+import { query, getClient } from '../config/database.js'
+import { billingCaptureLimiter } from '../middleware/rateLimits.js'
+import { safeErrorMessage } from '../utils/log.js'
 
 const router = express.Router()
 
@@ -118,12 +120,12 @@ router.post('/create-checkout', authenticate, async (req, res) => {
     res.json({ orderId: order.id, url: approvalUrl })
   } catch (error) {
     console.error('Checkout error:', error)
-    res.status(500).json({ error: error.message || 'Checkout failed' })
+    res.status(500).json({ error: safeErrorMessage(error, 'Checkout failed') })
   }
 })
 
 // POST /api/billing/capture-paypal  →  called after user approves on PayPal
-router.post('/capture-paypal', authenticate, async (req, res) => {
+router.post('/capture-paypal', authenticate, billingCaptureLimiter, async (req, res) => {
   try {
     const { token } = req.body   // PayPal sends ?token=ORDER_ID in the return URL
     if (!token) return res.status(400).json({ error: 'Missing PayPal order token' })
@@ -137,7 +139,12 @@ router.post('/capture-paypal', authenticate, async (req, res) => {
     if (!pendingTx) return res.status(404).json({ error: 'Order not found' })
     if (pendingTx.user_id !== req.user.id) return res.status(403).json({ error: 'Order does not belong to this user' })
     if (pendingTx.status === 'completed') {
-      return res.json({ success: true, credits: pendingTx.credits_added, already_processed: true })
+      return res.json({
+        success: true,
+        credits: pendingTx.credits_added,
+        already_processed: true,
+        message: 'Payment already processed',
+      })
     }
 
     const accessToken = await getPayPalToken()
@@ -150,24 +157,45 @@ router.post('/capture-paypal', authenticate, async (req, res) => {
 
     const credits = pendingTx.credits_added
 
-    // Add credits to user
-    await query(`
-      UPDATE zyana.user_credits
-      SET balance = balance + $1, total_purchased = total_purchased + $1, updated_at = NOW()
-      WHERE user_id = $2
-    `, [credits, req.user.id])
+    const client = await getClient()
+    try {
+      await client.query('BEGIN')
 
-    // Mark transaction completed
-    await query(`
-      UPDATE zyana.transactions SET status = 'completed', updated_at = NOW()
-      WHERE paypal_order_id = $1
-    `, [token])
+      const lockResult = await client.query(
+        'SELECT status, credits_added FROM zyana.transactions WHERE paypal_order_id = $1 FOR UPDATE',
+        [token]
+      )
+      if (lockResult.rows[0]?.status === 'completed') {
+        await client.query('ROLLBACK')
+        return res.json({
+          success: true,
+          credits: lockResult.rows[0].credits_added,
+          already_processed: true,
+          message: 'Payment already processed',
+        })
+      }
+
+      await client.query(
+        'UPDATE zyana.user_credits SET balance = balance + $1, total_purchased = total_purchased + $1, updated_at = NOW() WHERE user_id = $2',
+        [credits, req.user.id]
+      )
+      await client.query(
+        'UPDATE zyana.transactions SET status = $1, updated_at = NOW() WHERE paypal_order_id = $2',
+        ['completed', token]
+      )
+      await client.query('COMMIT')
+    } catch (err) {
+      await client.query('ROLLBACK')
+      throw err
+    } finally {
+      client.release()
+    }
 
     console.log(`✅ PayPal payment confirmed: user ${req.user.id} +${credits} credits ($${pendingTx.amount_usd})`)
     res.json({ success: true, credits })
   } catch (error) {
     console.error('PayPal capture error:', error)
-    res.status(500).json({ error: error.message || 'Capture failed' })
+    res.status(500).json({ error: safeErrorMessage(error, 'Capture failed') })
   }
 })
 

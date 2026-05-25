@@ -1,12 +1,14 @@
 import express from 'express'
 import { authenticate } from '../middleware/auth.js'
+import { validateAgentInput } from '../middleware/validate.js'
 import { callAI, checkCredits, deductCredits } from '../services/aiRouter.js'
 import { query } from '../config/database.js'
+import { safeErrorMessage } from '../utils/log.js'
 
 const router = express.Router()
 
 // POST /api/agent/chat
-router.post('/chat', authenticate, async (req, res) => {
+router.post('/chat', authenticate, validateAgentInput, async (req, res) => {
   try {
     const { message, model, provider, history = [] } = req.body
     if (!message) return res.status(400).json({ error: 'Message required' })
@@ -33,12 +35,12 @@ router.post('/chat', authenticate, async (req, res) => {
   } catch (error) {
     if (error.code === 'INSUFFICIENT_CREDITS') return res.status(402).json({ error: error.message, code: 'INSUFFICIENT_CREDITS', balance: error.balance, needed: error.needed })
     console.error('Chat error:', error)
-    res.status(500).json({ error: error.message || 'Chat failed' })
+    res.status(500).json({ error: safeErrorMessage(error, 'Chat failed') })
   }
 })
 
 // POST /api/agent/generate-script
-router.post('/generate-script', authenticate, async (req, res) => {
+router.post('/generate-script', authenticate, validateAgentInput, async (req, res) => {
   try {
     const { topic, format, platform, audience, model, provider } = req.body
     if (!topic) return res.status(400).json({ error: 'Topic required' })
@@ -99,12 +101,12 @@ Structure EXACTLY like this:
   } catch (error) {
     if (error.code === 'INSUFFICIENT_CREDITS') return res.status(402).json({ error: error.message, code: 'INSUFFICIENT_CREDITS' })
     console.error('Script gen error:', error)
-    res.status(500).json({ error: error.message || 'Script generation failed' })
+    res.status(500).json({ error: safeErrorMessage(error, 'Script generation failed') })
   }
 })
 
 // POST /api/agent/outreach-email
-router.post('/outreach-email', authenticate, async (req, res) => {
+router.post('/outreach-email', authenticate, validateAgentInput, async (req, res) => {
   try {
     const { brandName, brandCategory, brandNotes, model, provider } = req.body
     if (!brandName) return res.status(400).json({ error: 'Brand name required' })
@@ -146,7 +148,7 @@ LINKEDIN DM: [75-word LinkedIn version]`
     res.json({ email: response.text, creditsUsed, creditsRemaining: creditsResult.rows[0]?.balance || 0 })
   } catch (error) {
     if (error.code === 'INSUFFICIENT_CREDITS') return res.status(402).json({ error: error.message, code: 'INSUFFICIENT_CREDITS' })
-    res.status(500).json({ error: error.message || 'Email generation failed' })
+    res.status(500).json({ error: safeErrorMessage(error, 'Email generation failed') })
   }
 })
 

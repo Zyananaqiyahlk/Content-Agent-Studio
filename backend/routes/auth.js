@@ -2,13 +2,14 @@ import express from 'express'
 import bcrypt from 'bcryptjs'
 import { query } from '../config/database.js'
 import { generateToken, authenticate } from '../middleware/auth.js'
+import { signupLimiter, loginLimiter } from '../middleware/rateLimits.js'
 
 const router = express.Router()
 
 const FREE_CREDITS = parseInt(process.env.FREE_CREDITS_ON_SIGNUP) || 25
 
 // POST /api/auth/signup
-router.post('/signup', async (req, res) => {
+router.post('/signup', signupLimiter, async (req, res) => {
   try {
     const { email, password, name, brandName, niche } = req.body
 
@@ -20,6 +21,9 @@ router.post('/signup', async (req, res) => {
     }
     if (password.length < 8) {
       return res.status(400).json({ error: 'Password must be at least 8 characters' })
+    }
+    if (password.length > 72) {
+      return res.status(400).json({ error: 'Password must be 72 characters or fewer' })
     }
 
     // Check if email exists
@@ -67,7 +71,7 @@ router.post('/signup', async (req, res) => {
 })
 
 // POST /api/auth/login
-router.post('/login', async (req, res) => {
+router.post('/login', loginLimiter, async (req, res) => {
   try {
     const { email, password } = req.body
     if (!email || !password) return res.status(400).json({ error: 'Email and password required' })

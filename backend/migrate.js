@@ -143,6 +143,21 @@ async function migrate() {
     `)
     console.log('✅ Table: zyana.user_platforms')
 
+    // META CONNECTIONS — Instagram OAuth tokens (optional full analytics)
+    await query(`
+      CREATE TABLE IF NOT EXISTS zyana.meta_connections (
+        user_id UUID PRIMARY KEY REFERENCES zyana.users(id) ON DELETE CASCADE,
+        ig_user_id VARCHAR(64),
+        page_name VARCHAR(255),
+        access_token TEXT NOT NULL,
+        token_expires_at TIMESTAMP,
+        profile JSONB DEFAULT '{}',
+        connected_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      )
+    `)
+    console.log('✅ Table: zyana.meta_connections')
+
     // STUDIO VIDEOS — HeyGen generated videos
     await query(`
       CREATE TABLE IF NOT EXISTS zyana.studio_videos (

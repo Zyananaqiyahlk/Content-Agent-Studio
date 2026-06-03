@@ -15,6 +15,7 @@ import Outreach from './pages/Outreach.jsx'
 import Credits  from './pages/Credits.jsx'
 import Settings from './pages/Settings.jsx'
 import Studio   from './pages/Studio.jsx'
+import MetaInsights from './pages/MetaInsights.jsx'
 
 // Smart notification triggers based on user state
 function SmartNotifications() {
@@ -147,6 +148,9 @@ export default function App() {
             } />
             <Route path="/studio" element={
               <ProtectedRoute><AppShell><Studio /></AppShell></ProtectedRoute>
+            } />
+            <Route path="/insights" element={
+              <ProtectedRoute><AppShell><MetaInsights /></AppShell></ProtectedRoute>
             } />
 
             <Route path="*" element={<Navigate to="/dashboard" replace />} />

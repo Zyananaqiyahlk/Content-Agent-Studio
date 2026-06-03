@@ -1,6 +1,12 @@
 import express from 'express'
 import { authenticate } from '../middleware/auth.js'
 import { query } from '../config/database.js'
+import { callAI, checkCredits, deductCredits } from '../services/aiRouter.js'
+import {
+  isScrapegraphConfigured,
+  extractInstagramProfile,
+  normaliseInstagramProfile,
+} from '../services/scrapegraph.js'
 
 const router = express.Router()
 
@@ -12,108 +18,106 @@ const REQUIRED_SCOPES = [
   'instagram_manage_insights',
 ].join(',')
 
-const SGAI_API = 'https://api.scrapegraphai.com/v1/smartscraper'
-
 function metaAppId()     { return process.env.META_APP_ID }
 function metaAppSecret() { return process.env.META_APP_SECRET }
 function redirectUri()   { return process.env.META_REDIRECT_URI || `${process.env.BACKEND_URL || 'http://localhost:3001'}/api/meta/callback` }
-function sgaiKey()       { return process.env.SGAI_API_KEY }
+
+function buildGrowthPrompt({ profile, totals, topPosts, user }) {
+  const topCaptions = topPosts
+    .filter(p => p.caption)
+    .slice(0, 5)
+    .map((p, i) => `${i + 1}. "${p.caption}" (${p.like_count} likes, ${p.comments_count} comments)`)
+    .join('\n')
+
+  return `You are an expert Instagram growth coach. Analyze this creator's public profile and give a personalized growth plan.
+
+CREATOR CONTEXT:
+- App user niche: ${user.niche || 'content creation'}
+- App user brand: ${user.brand_name || user.name}
+
+INSTAGRAM PROFILE (@${profile.username}):
+- Name: ${profile.name}
+- Bio: ${profile.biography || 'N/A'}
+- Followers: ${totals.followers}
+- Following: ${totals.following}
+- Total posts: ${totals.posts}
+- Engagement rate: ${totals.engagementRate}%
+- Avg likes/post: ${totals.avgLikes}
+- Avg comments/post: ${totals.avgComments}
+
+TOP PERFORMING POST CAPTIONS:
+${topCaptions || 'No caption data available'}
+
+Write a concise, actionable growth report in markdown with these sections:
+
+## Profile Audit
+2-3 specific observations about bio, positioning, and engagement health.
+
+## What's Working
+Call out patterns in their best posts (themes, formats, hooks).
+
+## Content Ideas (This Week)
+5 specific post/Reel ideas tailored to their niche and what already performs for them.
+
+## Growth Playbook
+3 tactical steps to gain more followers (posting cadence, engagement habits, collaboration angles).
+
+## Next Milestone
+One clear follower goal and the fastest path to reach it.
+
+Be encouraging, specific, and data-backed. No generic advice.`
+}
+
+async function generateGrowthPlan({ user, profile, totals, topPosts }) {
+  await checkCredits(user.id, 'instagram_coach')
+
+  const response = await callAI({
+    userId: user.id,
+    provider: user.ai_provider || 'anthropic',
+    model: user.preferred_ai_model || 'claude-sonnet-4-20250514',
+    prompt: buildGrowthPrompt({ profile, totals, topPosts, user }),
+    userProfile: user,
+    feature: 'instagram_coach',
+  })
+
+  const creditsUsed = await deductCredits(user.id, 'instagram_coach')
+  const creditsResult = await query('SELECT balance FROM zyana.user_credits WHERE user_id = $1', [user.id])
+
+  return {
+    growthPlan: response.text,
+    creditsUsed,
+    creditsRemaining: creditsResult.rows[0]?.balance || 0,
+  }
+}
+
+// ── GET /api/meta/config ───────────────────────────────────
+router.get('/config', authenticate, (req, res) => {
+  res.json({
+    scrapegraphConfigured: isScrapegraphConfigured(),
+    metaConfigured: Boolean(metaAppId() && metaAppSecret()),
+  })
+})
 
 // ── POST /api/meta/scrape-public ───────────────────────────
-// Fetch public Instagram metrics via ScrapeGraph — no Meta App ID required.
-// Body: { username: "handle_without_@" }
 router.post('/scrape-public', authenticate, async (req, res) => {
-  const { username } = req.body
+  const { username, includeGrowthPlan = true } = req.body
   if (!username) return res.status(400).json({ error: 'username is required' })
-
-  const apiKey = sgaiKey()
-  if (!apiKey) return res.status(503).json({ error: 'SGAI_API_KEY not configured on server' })
+  if (!isScrapegraphConfigured()) {
+    return res.status(503).json({ error: 'Instagram lookup is not configured. Add SGAI_API_KEY to backend/.env.' })
+  }
 
   const handle = username.replace(/^@/, '').trim()
-  const profileUrl = `https://www.instagram.com/${handle}/`
 
   try {
-    const sgRes = await fetch(SGAI_API, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        api_key: apiKey,
-        website_url: profileUrl,
-        user_prompt: `Extract this Instagram profile's public data as JSON:
-- username (string)
-- full_name (string)
-- bio (string)
-- followers_count (number)
-- following_count (number)
-- posts_count (number)
-- is_verified (boolean)
-- profile_pic_url (string or null)
-- recent_posts: array of up to 12 posts, each with:
-    - like_count (number)
-    - comments_count (number)
-    - caption (string, first 100 chars)
-    - media_type (IMAGE | VIDEO | CAROUSEL)
-    - timestamp (ISO string if visible, else null)
-Return only the JSON, no markdown.`,
-      }),
-    })
+    const { profile: raw } = await extractInstagramProfile(handle)
+    const { profile, totals, topPosts } = normaliseInstagramProfile(raw, handle)
 
-    if (!sgRes.ok) {
-      const errText = await sgRes.text()
-      throw new Error(`ScrapeGraph error ${sgRes.status}: ${errText}`)
-    }
-
-    const sgData = await sgRes.json()
-
-    // ScrapeGraph returns { result: { ... } } or { result: "json string" }
-    let profile = sgData.result
-    if (typeof profile === 'string') {
-      try { profile = JSON.parse(profile) } catch { profile = {} }
-    }
-
-    if (!profile || (!profile.followers_count && !profile.username)) {
+    if (!profile.followers_count && !profile.username) {
       return res.status(422).json({
         error: `Could not extract data for @${handle}. The account may be private, or Instagram is blocking the scrape. Try again in a few minutes.`,
       })
     }
 
-    // Normalise field names
-    const normalised = {
-      username: profile.username || handle,
-      name: profile.full_name || profile.name || handle,
-      biography: profile.bio || profile.biography || '',
-      followers_count: profile.followers_count || profile.followers || 0,
-      follows_count: profile.following_count || profile.following || 0,
-      media_count: profile.posts_count || profile.posts || 0,
-      is_verified: profile.is_verified || false,
-      profile_picture_url: profile.profile_pic_url || null,
-    }
-
-    const posts = (profile.recent_posts || []).map(p => ({
-      like_count: p.like_count || 0,
-      comments_count: p.comments_count || 0,
-      caption: p.caption || '',
-      media_type: p.media_type || 'IMAGE',
-      timestamp: p.timestamp || null,
-    }))
-
-    // Calculate engagement rate from recent posts
-    const totalLikes    = posts.reduce((a, p) => a + p.like_count, 0)
-    const totalComments = posts.reduce((a, p) => a + p.comments_count, 0)
-    const engagementRate = normalised.followers_count && posts.length
-      ? (((totalLikes + totalComments) / posts.length) / normalised.followers_count * 100).toFixed(2)
-      : '0.00'
-
-    const totals = {
-      followers:       normalised.followers_count,
-      following:       normalised.follows_count,
-      posts:           normalised.media_count,
-      engagementRate,
-      avgLikes:        posts.length ? Math.round(totalLikes / posts.length) : 0,
-      avgComments:     posts.length ? Math.round(totalComments / posts.length) : 0,
-    }
-
-    // Persist to user_platforms so Dashboard can read it
     await query(`
       INSERT INTO zyana.user_platforms (user_id, platform, handle, metrics, synced_at, updated_at)
       VALUES ($1, 'instagram', $2, $3, NOW(), NOW())
@@ -122,19 +126,65 @@ Return only the JSON, no markdown.`,
         metrics    = EXCLUDED.metrics,
         synced_at  = NOW(),
         updated_at = NOW()
-    `, [req.user.id, `@${normalised.username}`, JSON.stringify(totals)])
+    `, [req.user.id, `@${profile.username}`, JSON.stringify(totals)])
 
-    console.log(`✅ ScrapeGraph: fetched IG @${normalised.username} (${normalised.followers_count} followers) for user ${req.user.id}`)
+    let growth = null
+    if (includeGrowthPlan) {
+      try {
+        growth = await generateGrowthPlan({ user: req.user, profile, totals, topPosts })
+      } catch (err) {
+        if (err.code === 'INSUFFICIENT_CREDITS') {
+          return res.status(402).json({
+            error: err.message,
+            code: 'INSUFFICIENT_CREDITS',
+            balance: err.balance,
+            needed: err.needed,
+            profile,
+            totals,
+            topPosts,
+            source: 'scrapegraph',
+          })
+        }
+        console.warn('Growth plan skipped:', err.message)
+      }
+    }
+
+    console.log(`✅ ScrapeGraph: @${profile.username} (${profile.followers_count} followers) for user ${req.user.id}`)
 
     res.json({
       source: 'scrapegraph',
-      profile: normalised,
+      profile,
       totals,
-      topPosts: posts,
+      topPosts,
+      ...(growth || {}),
     })
   } catch (err) {
     console.error('ScrapeGraph meta error:', err.message)
     res.status(500).json({ error: err.message })
+  }
+})
+
+// ── POST /api/meta/growth-coach ────────────────────────────
+router.post('/growth-coach', authenticate, async (req, res) => {
+  const { username, profile, totals, topPosts } = req.body
+  if (!profile || !totals) {
+    return res.status(400).json({ error: 'Run Instagram analysis first' })
+  }
+
+  try {
+    const growth = await generateGrowthPlan({
+      user: req.user,
+      profile,
+      totals,
+      topPosts: topPosts || [],
+    })
+    res.json({ username, ...growth })
+  } catch (err) {
+    if (err.code === 'INSUFFICIENT_CREDITS') {
+      return res.status(402).json({ error: err.message, code: 'INSUFFICIENT_CREDITS', balance: err.balance, needed: err.needed })
+    }
+    console.error('Growth coach error:', err.message)
+    res.status(500).json({ error: err.message || 'Growth plan failed' })
   }
 })
 

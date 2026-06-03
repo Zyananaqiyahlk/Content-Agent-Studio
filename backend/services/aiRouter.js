@@ -71,6 +71,7 @@ export function getCreditCost(feature) {
   const costs = {
     script_gen: parseInt(process.env.CREDITS_PER_SCRIPT) || 5,
     agent_chat: parseInt(process.env.CREDITS_PER_CHAT) || 3,
+    instagram_coach: parseInt(process.env.CREDITS_PER_INSTAGRAM_COACH) || parseInt(process.env.CREDITS_PER_CHAT) || 3,
     outreach_email: parseInt(process.env.CREDITS_PER_EMAIL) || 5,
     media_kit: parseInt(process.env.CREDITS_PER_MEDIAKIT) || 10,
   }

@@ -10,6 +10,7 @@ import billingRoutes from './routes/billing.js'
 import modelsRoutes from './routes/models.js'
 import platformsRoutes from './routes/platforms.js'
 import studioRoutes from './routes/studio.js'
+import metaRoutes from './routes/meta.js'
 
 dotenv.config()
 
@@ -81,6 +82,7 @@ app.use('/api/billing', billingRoutes)
 app.use('/api/models', modelsRoutes)
 app.use('/api/platforms', platformsRoutes)
 app.use('/api/studio', studioRoutes)
+app.use('/api/meta', apiLimiter, metaRoutes)
 
 // ─── HEALTH CHECK (Railway uses this) ──────────────────────
 app.get('/health', async (req, res) => {
@@ -120,6 +122,7 @@ app.listen(PORT, () => {
   console.log(`💳 PayPal: ${process.env.PAYPAL_CLIENT_ID ? `✅ configured (${process.env.PAYPAL_MODE || 'sandbox'})` : '⚠️  not configured'}`)
   console.log(`🤖 Claude: ${process.env.CLAUDE_API_KEY ? '✅ configured' : '⚠️  not configured'}`)
   console.log(`📹 HeyGen: ${process.env.HEYGEN_API_KEY ? '✅ configured' : '⚠️  not configured'}`)
+  console.log(`📸 ScrapeGraph: ${process.env.SGAI_API_KEY ? '✅ configured' : '⚠️  not configured'}`)
   console.log(`📊 YouTube: ${process.env.YOUTUBE_API_KEY ? '✅ configured' : '⚠️  not configured'}`)
   console.log(`\n📍 Health check: http://localhost:${PORT}/health\n`)
 })

@@ -63,12 +63,13 @@ export const api = {
   getStudioVideos: ()     => request('GET',  '/api/studio/videos'),
 
   // Meta / Instagram
-  getMetaAuthUrl:  ()    => request('GET',  '/api/meta/auth-url'),
+  getMetaConfig:        ()       => request('GET',    '/api/meta/config'),
+  getMetaAuthUrl:       ()       => request('GET',    '/api/meta/auth-url'),
   getMetaStatus:        ()       => request('GET',    '/api/meta/status'),
   getMetaInsights:      ()       => request('GET',    '/api/meta/insights'),
   disconnectMeta:       ()       => request('DELETE', '/api/meta/disconnect', {}),
-  // Fix B — ScrapeGraph public fetch (no Meta App ID required)
-  post:                 (path, body) => request('POST', `/api${path}`, body),
+  scrapeInstagram:      (body)   => request('POST',   '/api/meta/scrape-public', body),
+  getInstagramGrowthPlan: (body) => request('POST',   '/api/meta/growth-coach', body),
 
   // Content Schedule
   getSchedule:        ()      => request('GET',    '/api/schedule'),

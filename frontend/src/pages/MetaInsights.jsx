@@ -112,15 +112,39 @@ function SparkLine({ series = [], color = '#E1306C' }) {
   )
 }
 
+function GrowthPlan({ text }) {
+  if (!text) return null
+  const sections = text.split(/^## /m).filter(Boolean)
+  return (
+    <div style={{ marginBottom: 32 }}>
+      <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 16 }}>🚀 Your Growth Plan</h2>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        {sections.map((block, i) => {
+          const [title, ...rest] = block.split('\n')
+          return (
+            <div key={i} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: '18px 20px' }}>
+              <div style={{ fontWeight: 700, marginBottom: 8, color: '#6366f1' }}>{title.trim()}</div>
+              <div style={{ fontSize: 14, lineHeight: 1.7, color: 'var(--text)', whiteSpace: 'pre-wrap' }}>
+                {rest.join('\n').trim()}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 export default function MetaInsights() {
+  const [config, setConfig]         = useState({ scrapegraphConfigured: false, metaConfigured: false })
   const [status, setStatus]       = useState(null)
   const [insights, setInsights]   = useState(null)
+  const [growthPlan, setGrowthPlan] = useState('')
   const [loading, setLoading]     = useState(true)
   const [scraping, setScraping]   = useState(false)
   const [connecting, setConnecting] = useState(false)
   const [error, setError]         = useState(null)
   const [username, setUsername]   = useState('')
-  // 'idle' | 'scrapegraph' | 'meta'
   const [dataSource, setDataSource] = useState('idle')
 
   useEffect(() => {
@@ -134,16 +158,17 @@ export default function MetaInsights() {
   }, [])
 
   useEffect(() => {
-    api.getMetaStatus()
-      .then(s => {
-        setStatus(s)
-        if (s.connected) {
-          setDataSource('meta')
-          loadMetaInsights()
-        }
-      })
-      .catch(() => setStatus({ connected: false }))
-      .finally(() => setLoading(false))
+    Promise.all([
+      api.getMetaConfig().catch(() => ({ scrapegraphConfigured: false, metaConfigured: false })),
+      api.getMetaStatus().catch(() => ({ connected: false })),
+    ]).then(([cfg, s]) => {
+      setConfig(cfg)
+      setStatus(s)
+      if (s.connected) {
+        setDataSource('meta')
+        loadMetaInsights()
+      }
+    }).finally(() => setLoading(false))
   }, [])
 
   async function loadMetaInsights() {
@@ -159,20 +184,47 @@ export default function MetaInsights() {
     }
   }
 
-  // ── Fix B: ScrapeGraph public fetch ──
   async function handleScrapePublic(e) {
-    e.preventDefault()
+    e?.preventDefault?.()
     if (!username.trim()) return
     setScraping(true)
     setError(null)
     setInsights(null)
+    setGrowthPlan('')
     try {
-      const data = await api.post('/meta/scrape-public', { username: username.replace(/^@/, '') })
+      const data = await api.scrapeInstagram({ username: username.replace(/^@/, ''), includeGrowthPlan: true })
       setInsights(data)
+      setGrowthPlan(data.growthPlan || '')
       setDataSource('scrapegraph')
       setStatus({ connected: true, profile: data.profile })
     } catch (err) {
-      setError(err.message || 'Failed to fetch Instagram data. The account may be private.')
+      if (err.code === 'INSUFFICIENT_CREDITS') {
+        setError(`Need ${err.needed} credits for growth coaching (you have ${err.balance}). Metrics were fetched — top up credits and refresh the plan.`)
+        if (err.balance !== undefined) {
+          // partial response may be in error payload from backend - not standard, skip
+        }
+      } else {
+        setError(err.message || 'Failed to analyze Instagram. The account may be private.')
+      }
+    } finally {
+      setScraping(false)
+    }
+  }
+
+  async function regenerateGrowthPlan() {
+    if (!insights?.profile || !insights?.totals) return
+    setScraping(true)
+    setError(null)
+    try {
+      const data = await api.getInstagramGrowthPlan({
+        username: insights.profile.username,
+        profile: insights.profile,
+        totals: insights.totals,
+        topPosts: insights.topPosts,
+      })
+      setGrowthPlan(data.growthPlan || '')
+    } catch (err) {
+      setError(err.message)
     } finally {
       setScraping(false)
     }
@@ -195,6 +247,7 @@ export default function MetaInsights() {
     if (dataSource === 'meta') await api.disconnectMeta()
     setStatus({ connected: false })
     setInsights(null)
+    setGrowthPlan('')
     setDataSource('idle')
     setUsername('')
   }
@@ -209,13 +262,13 @@ export default function MetaInsights() {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 32, flexWrap: 'wrap', gap: 16 }}>
         <div>
-          <h1 style={{ fontSize: 26, fontWeight: 700, margin: 0 }}>📸 Instagram Insights</h1>
+          <h1 style={{ fontSize: 26, fontWeight: 700, margin: 0 }}>📸 Instagram Growth Coach</h1>
           <p style={{ color: 'var(--text-dim)', marginTop: 6, fontSize: 14 }}>
             {dataSource === 'meta'
               ? 'Live data · Meta Graph API · 30-day window'
               : dataSource === 'scrapegraph'
-              ? 'Public data · AI-powered scrape · No login required'
-              : 'Enter your handle or connect via Meta'}
+              ? 'Public profile analysis · AI growth tips · powered by ScrapeGraph'
+              : 'Enter a public handle — your agent will analyze posts and recommend how to grow'}
           </p>
         </div>
         {insights && (
@@ -231,9 +284,14 @@ export default function MetaInsights() {
             </div>
             <button className="btn btn-secondary btn-sm" onClick={handleDisconnect}>Clear</button>
             <button className="btn btn-sm" style={{ background: '#E1306C', color: '#fff', border: 'none' }}
-              onClick={() => dataSource === 'meta' ? loadMetaInsights() : handleScrapePublic({ preventDefault: ()=>{} })}>
+              onClick={() => dataSource === 'meta' ? loadMetaInsights() : handleScrapePublic({ preventDefault: () => {} })}>
               Refresh
             </button>
+            {dataSource === 'scrapegraph' && (
+              <button className="btn btn-secondary btn-sm" onClick={regenerateGrowthPlan} disabled={scraping}>
+                Regenerate plan
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -244,16 +302,24 @@ export default function MetaInsights() {
         </div>
       )}
 
+      {!config.scrapegraphConfigured && (
+        <div style={{ background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 10, padding: '14px 18px', marginBottom: 24, color: '#92400e', fontSize: 13 }}>
+          <strong>Server setup required.</strong> Add <code>SGAI_API_KEY</code> to your backend <code>.env</code> file (from{' '}
+          <a href="https://dashboard.scrapegraphai.com" target="_blank" rel="noreferrer">dashboard.scrapegraphai.com</a>
+          ), then restart the backend. End users never enter the API key in this app.
+        </div>
+      )}
+
       {/* ── Connect panel (shown when no data yet) ── */}
-      {!insights && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, maxWidth: 780, margin: '0 auto 40px', alignItems: 'start' }}>
+      {!insights && config.scrapegraphConfigured && (
+        <div style={{ display: 'grid', gridTemplateColumns: config.metaConfigured ? '1fr 1fr' : '1fr', gap: 20, maxWidth: 780, margin: '0 auto 40px', alignItems: 'start' }}>
 
           {/* Fix B — ScrapeGraph (primary) */}
           <div style={{ background: 'var(--surface)', border: '2px solid #6366f1', borderRadius: 16, padding: '28px 24px' }}>
             <div style={{ fontSize: 32, marginBottom: 12 }}>⚡</div>
-            <h3 style={{ fontSize: 16, fontWeight: 700, margin: '0 0 6px' }}>Quick Lookup</h3>
+            <h3 style={{ fontSize: 16, fontWeight: 700, margin: '0 0 6px' }}>Analyze & Grow</h3>
             <p style={{ color: 'var(--text-dim)', fontSize: 13, lineHeight: 1.5, marginBottom: 20 }}>
-              Enter any <strong>public</strong> Instagram handle. No login, no Meta app required.
+              Enter any <strong>public</strong> Instagram handle. Your AI agent reviews posts, engagement, and bio — then recommends content ideas to grow followers.
             </p>
             <form onSubmit={handleScrapePublic} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <div style={{ display: 'flex', gap: 8 }}>
@@ -272,15 +338,16 @@ export default function MetaInsights() {
                 disabled={scraping || !username.trim()}
                 style={{ padding: '12px', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: '#fff', fontWeight: 700, fontSize: 14, cursor: 'pointer', opacity: scraping ? 0.7 : 1 }}
               >
-                {scraping ? '⏳ Fetching...' : '🔍 Fetch Metrics'}
+                {scraping ? '⏳ Analyzing profile...' : '🚀 Analyze & Get Growth Tips'}
               </button>
             </form>
             <div style={{ marginTop: 14, fontSize: 11, color: 'var(--text-dim)' }}>
-              ✓ Works for public accounts · No Meta App ID needed
+              ✓ Uses your server API key · Costs a few credits for AI coaching
             </div>
           </div>
 
           {/* Meta OAuth (secondary) */}
+          {config.metaConfigured && (
           <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, padding: '28px 24px' }}>
             <div style={{ fontSize: 32, marginBottom: 12 }}>📊</div>
             <h3 style={{ fontSize: 16, fontWeight: 700, margin: '0 0 6px' }}>Full Analytics</h3>
@@ -298,13 +365,14 @@ export default function MetaInsights() {
               Requires: Meta Developer App · Business/Creator account
             </div>
           </div>
+          )}
         </div>
       )}
 
       {/* Loading state */}
       {scraping && !insights && (
         <div style={{ color: 'var(--text-dim)', padding: '40px 0', textAlign: 'center' }}>
-          {dataSource === 'meta' ? '⏳ Fetching live data from Meta Graph API...' : '⏳ Scraping public Instagram data...'}
+          {dataSource === 'meta' ? '⏳ Fetching live data from Meta Graph API...' : '⏳ Scraping Instagram & generating your growth plan...'}
         </div>
       )}
 
@@ -354,10 +422,14 @@ export default function MetaInsights() {
           {/* ScrapeGraph — upgrade prompt */}
           {dataSource === 'scrapegraph' && (
             <div style={{ background: 'linear-gradient(135deg, rgba(99,102,241,0.08), rgba(139,92,246,0.08))', border: '1px solid rgba(99,102,241,0.2)', borderRadius: 12, padding: '16px 20px', marginBottom: 24, fontSize: 13 }}>
-              <strong>⚡ Quick Lookup active</strong> — showing public metrics only.
-              <span style={{ color: 'var(--text-dim)', marginLeft: 8 }}>Connect via Meta OAuth to unlock reach, impressions, story views, and 30-day trend charts.</span>
+              <strong>⚡ Public profile analysis</strong>
+              {config.metaConfigured && (
+                <span style={{ color: 'var(--text-dim)', marginLeft: 8 }}>Connect via Meta OAuth to unlock reach, impressions, and 30-day trend charts.</span>
+              )}
             </div>
           )}
+
+          <GrowthPlan text={growthPlan} />
 
           {/* Top Posts */}
           {insights.topPosts?.length > 0 && (
@@ -409,28 +481,13 @@ export default function MetaInsights() {
         </>
       )}
 
-      {/* Setup guide */}
-      <div style={{ marginTop: 32, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, fontSize: 13 }}>
-        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: '20px 24px' }}>
-          <div style={{ fontWeight: 600, marginBottom: 8 }}>⚡ Quick Lookup Setup (Fix B)</div>
-          <div style={{ color: 'var(--text-dim)', lineHeight: 1.8 }}>
-            <div>1. Get a free API key at <strong>dashboard.scrapegraphai.com</strong></div>
-            <div>2. Add to <code style={{ background: 'var(--surface-2)', padding: '1px 5px', borderRadius: 4 }}>backend/.env</code>:</div>
-            <div style={{ fontFamily: 'monospace', background: 'var(--surface-2)', padding: '8px 12px', borderRadius: 6, marginTop: 4 }}>SGAI_API_KEY=your_key_here</div>
-            <div style={{ marginTop: 8, color: '#22c55e' }}>✓ Works for any public Instagram account</div>
-          </div>
+      {!config.scrapegraphConfigured && !config.metaConfigured && (
+        <div style={{ marginTop: 32, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: '20px 24px', fontSize: 13, color: 'var(--text-dim)' }}>
+          <div style={{ fontWeight: 600, color: 'var(--text)', marginBottom: 8 }}>Admin setup</div>
+          <p style={{ margin: '0 0 8px' }}>Add <code>SGAI_API_KEY</code> to <code>backend/.env</code> to enable Instagram analysis for all users.</p>
+          <p style={{ margin: 0 }}>Optionally add <code>META_APP_ID</code> and <code>META_APP_SECRET</code> for full OAuth analytics.</p>
         </div>
-        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: '20px 24px' }}>
-          <div style={{ fontWeight: 600, marginBottom: 8 }}>📊 Full Meta OAuth Setup</div>
-          <ol style={{ margin: 0, paddingLeft: 18, color: 'var(--text-dim)', lineHeight: 2 }}>
-            <li>developers.facebook.com → Create App → Business</li>
-            <li>Add Instagram Graph API product</li>
-            <li>Copy App ID + Secret → <code style={{ background: 'var(--surface-2)', padding: '1px 5px', borderRadius: 4 }}>backend/.env</code></li>
-            <li>Add callback URL to Valid OAuth Redirect URIs</li>
-            <li>Submit for Advanced Access on <code>instagram_manage_insights</code></li>
-          </ol>
-        </div>
-      </div>
+      )}
     </div>
   )
 }

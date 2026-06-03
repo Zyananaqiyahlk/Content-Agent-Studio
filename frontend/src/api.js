@@ -61,4 +61,21 @@ export const api = {
   generateVideo:   (body) => request('POST', '/api/studio/generate', body),
   getVideoStatus:  (id)   => request('GET',  `/api/studio/video/${id}`),
   getStudioVideos: ()     => request('GET',  '/api/studio/videos'),
+
+  // Meta / Instagram
+  getMetaConfig:        ()       => request('GET',    '/api/meta/config'),
+  getMetaAuthUrl:       ()       => request('GET',    '/api/meta/auth-url'),
+  getMetaStatus:        ()       => request('GET',    '/api/meta/status'),
+  getMetaInsights:      ()       => request('GET',    '/api/meta/insights'),
+  disconnectMeta:       ()       => request('DELETE', '/api/meta/disconnect', {}),
+  scrapeInstagram:      (body)   => request('POST',   '/api/meta/scrape-public', body),
+  getInstagramGrowthPlan: (body) => request('POST',   '/api/meta/growth-coach', body),
+
+  // Content Schedule
+  getSchedule:        ()      => request('GET',    '/api/schedule'),
+  addSchedulePost:    (body)  => request('POST',   '/api/schedule', body),
+  updateSchedulePost: (id, b) => request('PUT',    `/api/schedule/${id}`, b),
+  deleteSchedulePost: (id)    => request('DELETE', `/api/schedule/${id}`, {}),
+  getOptimalTimes:    ()      => request('GET',    '/api/schedule/optimal-times'),
+  generateSchedule:   (body)  => request('POST',   '/api/schedule/generate', body),
 }
